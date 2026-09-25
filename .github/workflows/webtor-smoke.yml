@@ -1,0 +1,18 @@
+name: Webtor isolated free validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Build pinned test image
+        run: docker build --network=none --tag tmx-webtor:test .
+      - name: Startup and healthcheck, no raw logs
+        run: python3 ci/startup.py
