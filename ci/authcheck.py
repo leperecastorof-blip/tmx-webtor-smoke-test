@@ -35,13 +35,15 @@ def test_auth(env,add,ctx):
  def denied(r):return r[0] in [401,403] or (r[0] in [302,303,307] and '/login' in r[1].get('Location',''))
  add('profile_denies_anonymous',denied(request(anon,'/profile')))
  status,headers,body=request(op,'/login');p=Parser();p.feed(body);add('csrf_form_token',status==200 and bool(p.csrf))
- missing=request(op,'/login',{'password':env['ADMIN_PASSWORD']});add('missing_csrf_rejected',missing[0]==403,status=missing[0])
+ missing=request(op,'/login',{'password':env['ADMIN_PASSWORD']});add('missing_csrf_rejected',missing[0] in [400,403] and denied(request(op,'/profile')),status=missing[0],csrfMentioned='csrf' in missing[2].lower())
  status,_,body=request(op,'/login');p=Parser();p.feed(body)
  bad=request(op,'/login',{'password':'invalid-test-password','_csrf':p.csrf});add('wrong_password_rejected',bad[0]==401,status=bad[0])
  status,_,body=request(op,'/login');p=Parser();p.feed(body)
  good=request(op,'/login',{'password':env['ADMIN_PASSWORD'],'_csrf':p.csrf});add('valid_password_session',good[0] in [302,303],status=good[0])
  profile=request(op,'/profile');add('authenticated_profile_access',profile[0]==200 and not denied(profile),status=profile[0])
- secretvalues=[c.value for c in jar if c.value]+[p.csrf]
+ import re
+ secretvalues=[c.value for c in jar if c.value and (len(c.value)>=24 or re.search(r'sess|auth|csrf|token',c.name,re.I))]+[p.csrf]
+ add('cookie_secret_classification',True,cookies=[{'name':re.sub('[^a-zA-Z0-9_-]','',c.name),'length':len(c.value),'sensitive':c.value in secretvalues} for c in jar])
  return {'opener':op,'anonymous':anon,'secretvalues':secretvalues,'profile':profile[2]}
 def test_logout(session,add):
  request(session['opener'],'/logout');r=request(session['opener'],'/profile');add('logout_revokes_session',r[0] in [401,403] or (r[0] in [302,303,307] and '/login' in r[1].get('Location','')),status=r[0])

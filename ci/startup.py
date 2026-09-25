@@ -1,6 +1,7 @@
 import os,subprocess,secrets,time,json,urllib.request,urllib.error
 from authcheck import start_proxy,test_auth,test_logout
-name='tmx-webtor-smoke'; results=[];proxy=None;tmp=None;session=None
+from video import test_video
+name='tmx-webtor-smoke'; results=[];proxy=None;tmp=None;session=None;video_ok=False
 def run(args,**kw):return subprocess.run(args,check=True,capture_output=True,text=True,**kw)
 def add(n,ok,**kw):results.append(dict(test=n,pass_=bool(ok),**kw));print(json.dumps(results[-1]),flush=True)
 env=os.environ.copy()
@@ -23,6 +24,7 @@ try:
   add('login_password_form',r.status==200 and 'type="password"' in body)
   proxy,tmp,ctx=start_proxy()
   session=test_auth(env,add,ctx)
+  if all(r['pass_'] for r in results):video_ok=test_video(session,add,ctx,run)
   test_logout(session,add)
  logs=run(['docker','logs',name]);alllogs=logs.stdout+logs.stderr
  add('configured_test_secrets_absent_from_logs',not any(env[k] in alllogs for k in ['ADMIN_PASSWORD','PG_PASSWORD','AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY']))
@@ -31,7 +33,7 @@ try:
   # Emit only whitelisted categories, never raw logs.
   categories=[label for label,needle in [('image_guard','TMX_WEBTOR_GUARD:'),('permission','permission denied'),('out_of_memory','out of memory'),('database','database'),('init_error','s6-rc: warning'),('storage_xattrs','xattr')] if needle.lower() in alllogs.lower()]
   print(json.dumps({'failure_categories':categories}))
- print(json.dumps({'real_authentication':'executed' if session else 'not_executed','video_playback':'not_executed_in_startup_phase'}))
+ print(json.dumps({'real_authentication':'executed' if session else 'not_executed','video_playback':'real_hls_decoded' if video_ok else 'not_validated'}))
  if not all(r['pass_'] for r in results):raise SystemExit(1)
 except Exception as e:
  print(json.dumps({'test':'execution','pass_':False,'error_type':type(e).__name__}));raise SystemExit(1)
