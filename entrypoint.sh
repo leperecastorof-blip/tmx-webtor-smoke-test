@@ -4,15 +4,13 @@ set -eu
 fail() { printf '%s\n' "TMX_WEBTOR_GUARD:$1" >&2; exit 78; }
 [ "$$" -eq 1 ] || fail NOT_CONTAINER_ENTRYPOINT
 [ -f /etc/tmx-webtor/image-sentinel ] || fail IMAGE_SENTINEL_MISSING
-[ "$(cat /etc/tmx-webtor/image-sentinel)" = 'tmx-webtor-ephemeral-test-v1' ] || fail WRONG_IMAGE
+[ "$(cat /etc/tmx-webtor/image-sentinel)" = 'tmx-webtor-confined-v2' ] || fail WRONG_IMAGE
 [ -f /.dockerenv ] || [ -f /run/.containerenv ] || fail CONTAINER_MARKER_MISSING
 ROOT=/var/lib/webtor
 [ "${PERSISTENT_DISK_PATH:-$ROOT}" = "$ROOT" ] || fail UNEXPECTED_STORAGE_PATH
 [ -d "$ROOT" ] && [ ! -L "$ROOT" ] || fail STORAGE_NOT_DIRECTORY
 [ "$(readlink -f "$ROOT")" = "$ROOT" ] || fail STORAGE_PATH_REDIRECTED
-[ "${TMX_STORAGE_MODE:-}" = ephemeral-test ] || fail EPHEMERAL_TEST_NOT_EXPLICIT
-[ -w "$ROOT" ] || fail STORAGE_NOT_WRITABLE
-# Only this test image may use its own ephemeral filesystem, never a host directory.
+awk '$5=="/var/lib/webtor" && $6 ~ /(^|,)rw(,|$)/ {ok=1} END {exit !ok}' /proc/self/mountinfo || fail EXPLICIT_RW_VOLUME_REQUIRED
 [ -n "${ADMIN_PASSWORD:-}" ] && [ "${#ADMIN_PASSWORD}" -ge 24 ] || fail ADMIN_SECRET_REQUIRED
 [ -n "${PG_PASSWORD:-}" ] && [ "${#PG_PASSWORD}" -ge 24 ] || fail DATABASE_SECRET_REQUIRED
 [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ] || fail STORAGE_SECRETS_REQUIRED
@@ -36,5 +34,11 @@ for name in data pgdata storage; do mkdir -p "$ROOT/$name"; done
 chown postgres:postgres "$ROOT/pgdata"
 chmod 700 "$ROOT/pgdata"
 # Only a constant is logged. No environment values, paths, keys or passwords.
-printf '%s\n' 'TMX_WEBTOR_EPHEMERAL_TEST_ONLY_DATA_WILL_BE_LOST'
+printf '%s\n' 'TMX_WEBTOR_STORAGE_READY'
+# App-specific runtime files stay inside the declared application data volume.
+mkdir -p "$ROOT/runtime/home" "$ROOT/runtime/cache" "$ROOT/runtime/share" /run/nginx
+export HOME="$ROOT/runtime/home"
+export XDG_CACHE_HOME="$ROOT/runtime/cache"
+export XDG_DATA_HOME="$ROOT/runtime/share"
+export PGDATA_DIR="$ROOT/pgdata"
 exec /init

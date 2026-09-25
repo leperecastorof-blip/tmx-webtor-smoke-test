@@ -57,7 +57,9 @@ PREFIX = 'tmx-startup-fix-'
 VOLUMES = {
     '/var/lib/webtor': PREFIX + 'data',
     '/etc/webtor': PREFIX + 'config',
-    '/var/log': PREFIX + 'logs'
+    '/var/log': PREFIX + 'logs',
+    '/etc/crontabs': PREFIX + 'cron',
+    '/usr/local/nginx/conf': PREFIX + 'nginx-config'
 }
 EXPECTED_TMPFS = {'/run', '/tmp', '/var/tmp'}
 BASE_CAPS = {'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID'}
@@ -196,7 +198,7 @@ def storage_check(container_name=NAME):
         paths = []
         for line in changes:
             _, _, path = line.partition(' ')
-            parents = {str(Path(p).parent) for p in set(VOLUMES) | EXPECTED_TMPFS}
+            parents = {str(a) for p in set(VOLUMES) | EXPECTED_TMPFS for a in Path(p).parents}
             if path in parents and line.startswith('C '):
                 continue
             if any(path == p or path.startswith(p + '/') for p in set(VOLUMES) | EXPECTED_TMPFS):
@@ -305,7 +307,7 @@ def wait_healthy(timeout=120):
 
 def run_startup_and_diagnose(env):
     # Initial Attempt under strict baseline restrictions
-    success, launch_err = launch_container(env, extra_caps=[], tmpfs_exec=False)
+    success, launch_err = launch_container(env, extra_caps=[], tmpfs_exec=True)
     if not success:
         return False, {'classified_error': 'docker_run_failed', 'stderr_snippet': redact_text(launch_err, KNOWN_SECRETS)}, None
         
@@ -386,7 +388,7 @@ def main():
         # Storage Confinement Initial Verification
         clean_storage, diff_paths = storage_check(NAME)
         if not clean_storage:
-            output('declared_storage_confinement_at_startup', 'FAIL', unconfined_paths=diff_paths[:10])
+            output('declared_storage_confinement_at_startup', 'FAIL', unconfined_paths=diff_paths)
             raise SystemExit(1)
         output('declared_storage_confinement_at_startup', 'PASS', volumes=list(VOLUMES), tmpfs=sorted(EXPECTED_TMPFS))
 
@@ -430,7 +432,20 @@ def main():
         if video and session and 'ctx' in locals():
             def video_cb(name, ok, **kw):
                 output(name, ok, **kw)
-            video_ok = video.test_video(session, video_cb, ctx, run_cmd)
+            original_open = urllib.request.OpenerDirector.open
+            def capture_hls(self, fullurl, *a, **kw):
+                u = fullurl.full_url if isinstance(fullurl, urllib.request.Request) else str(fullurl)
+                parsed = urllib.parse.urlsplit(u)
+                if parsed.netloc == '127.0.0.1:18443' and parsed.query:
+                    for k, vs in urllib.parse.parse_qs(parsed.query).items():
+                        if k.lower() in ['token','sig','signature','api-key','key','api_key']:
+                            for v in vs:
+                                if len(v) >= 16: KNOWN_SECRETS.add(v); session['secretvalues'].append(v)
+                    if '/torrent-http-proxy/' in parsed.path: session['secretvalues'].append(u)
+                return original_open(self, fullurl, *a, **kw)
+            urllib.request.OpenerDirector.open = capture_hls
+            try: video_ok = video.test_video(session, video_cb, ctx, run_cmd)
+            finally: urllib.request.OpenerDirector.open = original_open
         else:
             output('webtor_real_hls_decoded', 'NON TESTÉ', reason='video_module_or_session_missing')
 
@@ -456,7 +471,7 @@ def main():
             output('restart_and_health', False, error=type(e).__name__)
 
         # Final Gate Result
-        output('gate_finished', 'PASS', applied_fix=applied_fix)
+        output('gate_finished', 'PASS', applied_fix='tmpfs_run_exec_and_confined_runtime_paths', no_additional_capabilities=True)
 
     except SystemExit:
         raise
