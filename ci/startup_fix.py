@@ -59,7 +59,8 @@ VOLUMES = {
     '/etc/webtor': PREFIX + 'config',
     '/var/log': PREFIX + 'logs',
     '/etc/crontabs': PREFIX + 'cron',
-    '/usr/local/nginx/conf': PREFIX + 'nginx-config'
+    '/usr/local/nginx/conf': PREFIX + 'nginx-config',
+    '/usr/local/nginx/logs': PREFIX + 'nginx-logs'
 }
 EXPECTED_TMPFS = {'/run', '/tmp', '/var/tmp'}
 BASE_CAPS = {'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID'}
@@ -451,6 +452,14 @@ def main():
 
         # Phase 6: Log Secret Disclosure Check
         logs = get_container_logs(NAME)
+        r = run_cmd(['docker','exec',NAME,'sh','-c','cat /usr/local/nginx/logs/error.log 2>/dev/null || true'])
+        logs += r.stdout
+        r = run_cmd(['docker','exec',NAME,'sh','-c','cat /etc/webtor/secrets/api.env 2>/dev/null || true'])
+        for line in r.stdout.splitlines():
+            key, sep, value = line.removeprefix('export ').partition('=')
+            value = value.strip().strip("\"'")
+            if sep and len(value)>=16 and any(k in key for k in ['KEY','SECRET','PASSWORD']): KNOWN_SECRETS.add(value)
+        output('server_secret_values_absent_from_logs', not any(v in logs for v in KNOWN_SECRETS if len(v)>=16), checked_count=len(KNOWN_SECRETS))
         secrets_in_logs = [k for k in ['ADMIN_PASSWORD', 'PG_PASSWORD', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'] if env[k] in logs]
         output('configured_test_secrets_absent_from_logs', len(secrets_in_logs) == 0, leaked_count=len(secrets_in_logs))
         
