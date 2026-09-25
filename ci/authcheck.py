@@ -1,3 +1,4 @@
+import re
 import ssl,http.server,http.client,threading,tempfile,subprocess,urllib.request,urllib.error,urllib.parse,http.cookiejar,html.parser,json
 from pathlib import Path
 BASE='https://127.0.0.1:18443'
@@ -20,6 +21,10 @@ class Parser(html.parser.HTMLParser):
  def handle_starttag(self,t,a):
   d=dict(a)
   if t=='input' and d.get('name')=='_csrf':self.csrf=d.get('value','')
+ def handle_data(self,data):
+  if not self.csrf:
+   m=re.search(r'window\._CSRF\s*=\s*("[^"]*")',data)
+   if m:self.csrf=json.loads(m.group(1))
 def request(opener,path,data=None):
  r=urllib.request.Request(BASE+path,headers={'User-Agent':'Webtor-isolated-smoke','Origin':BASE,'Referer':BASE+'/login'},data=urllib.parse.urlencode(data).encode() if data is not None else None)
  try:v=opener.open(r,timeout=30)
