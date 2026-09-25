@@ -459,6 +459,10 @@ def main():
             key, sep, value = line.removeprefix('export ').partition('=')
             value = value.strip().strip("\"'")
             if sep and len(value)>=16 and any(k in key for k in ['KEY','SECRET','PASSWORD']): KNOWN_SECRETS.add(value)
+        leaked = [v for v in KNOWN_SECRETS if len(v)>=16 and v in logs]
+        if leaked:
+            safe_lines=[redact_text(l, KNOWN_SECRETS)[:400] for l in logs.splitlines() if any(v in l for v in leaked)]
+            print(json.dumps({'redacted_leak_context':safe_lines[:5]}),flush=True)
         output('server_secret_values_absent_from_logs', not any(v in logs for v in KNOWN_SECRETS if len(v)>=16), checked_count=len(KNOWN_SECRETS))
         secrets_in_logs = [k for k in ['ADMIN_PASSWORD', 'PG_PASSWORD', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'] if env[k] in logs]
         output('configured_test_secrets_absent_from_logs', len(secrets_in_logs) == 0, leaked_count=len(secrets_in_logs))
@@ -480,7 +484,7 @@ def main():
             output('restart_and_health', False, error=type(e).__name__)
 
         # Final Gate Result
-        output('gate_finished', 'PASS', applied_fix='tmpfs_run_exec_and_confined_runtime_paths', no_additional_capabilities=True)
+        output('gate_finished', 'PASS', applied_fix='tmpfs_run_exec_confined_runtime_paths_and_log_redaction', no_additional_capabilities=True)
 
     except SystemExit:
         raise

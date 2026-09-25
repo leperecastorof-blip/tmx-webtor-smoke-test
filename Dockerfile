@@ -17,3 +17,9 @@ ENTRYPOINT ["/usr/local/bin/tmx-webtor-entrypoint"]
 # s6 and nginx runtime artifacts are confined to declared /run tmpfs and config volume.
 RUN sed -i '1i pid /run/nginx/nginx.pid;' /usr/local/nginx/conf/nginx.template.conf && \
     sed -i '/^http {/a\    client_body_temp_path /run/nginx/client_body;\n    proxy_temp_path /run/nginx/proxy;\n    fastcgi_temp_path /run/nginx/fastcgi;\n    uwsgi_temp_path /run/nginx/uwsgi;\n    scgi_temp_path /run/nginx/scgi;' /usr/local/nginx/conf/nginx.template.conf
+
+# Filter app diagnostics before s6-log writes to Docker stdout/stderr.
+COPY redact-logs.sh /usr/local/bin/tmx-redact-logs
+RUN chmod 0555 /usr/local/bin/tmx-redact-logs && \
+    find /etc/s6-overlay/s6-rc.d -type f -name run -exec sed -i 's/| s6-log/| \/usr\/local\/bin\/tmx-redact-logs | s6-log/g' {} \; && \
+    grep -q 'tmx-redact-logs' /etc/s6-overlay/s6-rc.d/rest-api/run
