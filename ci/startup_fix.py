@@ -433,6 +433,7 @@ def main():
         if video and session and 'ctx' in locals():
             def video_cb(name, ok, **kw):
                 output(name, ok, **kw)
+            hls_targets = []
             original_open = urllib.request.OpenerDirector.open
             def capture_hls(self, fullurl, *a, **kw):
                 u = fullurl.full_url if isinstance(fullurl, urllib.request.Request) else str(fullurl)
@@ -442,11 +443,16 @@ def main():
                         if k.lower() in ['token','sig','signature','api-key','key','api_key']:
                             for v in vs:
                                 if len(v) >= 16: KNOWN_SECRETS.add(v); session['secretvalues'].append(v)
-                    if '/torrent-http-proxy/' in parsed.path: session['secretvalues'].append(u)
+                    if '/torrent-http-proxy/' in parsed.path:
+                        session['secretvalues'].append(u)
+                        hls_targets.append(u)
                 return original_open(self, fullurl, *a, **kw)
             urllib.request.OpenerDirector.open = capture_hls
             try: video_ok = video.test_video(session, video_cb, ctx, run_cmd)
             finally: urllib.request.OpenerDirector.open = original_open
+            if video_ok:
+                from hls_security import verify
+                verify(hls_targets, ctx, run_cmd, KNOWN_SECRETS, output)
         else:
             output('webtor_real_hls_decoded', 'NON TESTÉ', reason='video_module_or_session_missing')
 
