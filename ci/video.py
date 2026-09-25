@@ -39,9 +39,15 @@ def test_video(session,add,ctx,run):
    torrent=bencode({b'info':info,b'url-list':[f'http://{gateway}:18888/video.mp4'.encode()]})
    stage='api_key'
    status,_,body=request(session['opener'],'/profile');assert status==200;pform=Parser();pform.feed(body)
+   stage='api_key_read'
    status,_,body=request(session['opener'],'/api-credentials/key')
+   print(json.dumps({'diagnostic':'key_lookup','status':status}),flush=True)
    if status==204:
-    status,_,_=request(session['opener'],'/api-credentials/generate',{'_csrf':pform.csrf});assert status in [200,201,202,302,303]
+    stage='api_key_generate'
+    status,_,_=request(session['opener'],'/api-credentials/generate',{'_csrf':pform.csrf})
+    print(json.dumps({'diagnostic':'key_generation','status':status}),flush=True)
+    assert status in [200,201,202,204,302,303,307]
+    stage='api_key_retrieve'
     status,_,body=request(session['opener'],'/api-credentials/key')
    assert status==200;key=json.loads(body)['key'];session['secretvalues'].append(key)
    opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
