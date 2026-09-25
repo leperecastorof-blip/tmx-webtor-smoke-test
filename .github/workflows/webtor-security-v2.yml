@@ -1,0 +1,18 @@
+name: Webtor immediate-stop security gate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  security_gate:
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Build pinned isolated image
+        run: docker build --network=none --tag tmx-webtor:test .
+      - name: Immediate-stop security and storage gate
+        run: python3 -u ci/security_gate.py
